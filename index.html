@@ -138,6 +138,11 @@
     background: rgba(0,0,0,0.6); opacity: 0; transition: opacity 0.3s ease;
   }
   #aviso.visible { opacity: 1; }
+  #error {
+    display: none; position: absolute; left: 130px; bottom: 48px; max-width: 1100px;
+    padding: 12px 20px; border-radius: 12px; font-size: 20px;
+    background: rgba(180, 30, 40, 0.85); color: #fff;
+  }
   #marca { position: absolute; bottom: 48px; right: 130px; display: flex; align-items: center; gap: 12px; font-size: 20px; color: var(--tenue); }
   #marca img { width: 36px; height: 36px; }
 </style>
@@ -198,6 +203,7 @@
   </div>
 
   <div id="aviso"></div>
+  <div id="error"></div>
   <div id="marca"><img src="icono.png" alt="">Full Player</div>
   </div>
 
@@ -214,6 +220,41 @@ const Mensajes = cast.framework.messages;
 const $ = (id) => document.getElementById(id);
 
 reproductor.setMediaElement($('medio'));
+
+// ---------- Errores visibles ----------
+// Si algo falla en la TV, se muestra abajo a la izquierda (sirve para diagnosticar con una foto).
+function mostrarError(err) {
+  const caja = document.getElementById('error');
+  if (!caja) return;
+  const texto = err && (err.message || err.reason || err) ? String(err.message || err.reason || err) : 'Error desconocido';
+  caja.textContent = 'Error del receptor: ' + texto.slice(0, 160);
+  caja.style.display = 'block';
+}
+window.addEventListener('error', (e) => mostrarError(e.error || e.message));
+window.addEventListener('unhandledrejection', (e) => mostrarError(e.reason));
+
+// ---------- Arranque (primero de todo) ----------
+// Se arranca antes que la interfaz: aunque falle cualquier otra parte, la TV igual reproduce.
+// Cada interceptor va por separado: si la TV no admite alguno, se omite y el resto sigue.
+['QUEUE_UPDATE', 'QUEUE_NEXT', 'QUEUE_PREV', 'SEEK', 'PLAY', 'PAUSE'].forEach((nombre) => {
+  const tipo = Mensajes.MessageType[nombre];
+  if (!tipo) return;
+  try {
+    reproductor.setMessageInterceptor(tipo, (pedido) => filtrarOrdenDelSistema(pedido));
+  } catch (e) {
+    console.warn('Interceptor no admitido:', nombre, e);
+  }
+});
+try {
+  const opciones = new cast.framework.CastReceiverOptions();
+  opciones.supportedCommands =
+    Mensajes.Command.ALL_BASIC_MEDIA | Mensajes.Command.QUEUE_NEXT | Mensajes.Command.QUEUE_PREV;
+  contexto.start(opciones);
+} catch (e) {
+  // último recurso: arrancar sin opciones
+  console.error('Arranque con opciones falló, se reintenta sin ellas', e);
+  contexto.start();
+}
 
 // ---------- Datos de la canción ----------
 function textoDe(meta, ...claves) {
@@ -431,14 +472,12 @@ window.addEventListener('keyup', alSoltar, true);
 // Las órdenes del teléfono siguen funcionando normalmente.
 let pedidoPropio = false;
 function filtrarOrdenDelSistema(pedido) {
-  if (pedidoPropio) { pedidoPropio = false; return pedido; }
-  if (Date.now() - ultimaTecla < 700) return null;
+  try {
+    if (pedidoPropio) { pedidoPropio = false; return pedido; }
+    if (Date.now() - ultimaTecla < 700) return null;
+  } catch (e) { /* ante cualquier duda, la orden pasa */ }
   return pedido;
 }
-['QUEUE_UPDATE', 'QUEUE_NEXT', 'QUEUE_PREV', 'SEEK', 'PLAY', 'PAUSE', 'SKIP_AD'].forEach((nombre) => {
-  const tipo = Mensajes.MessageType[nombre];
-  if (tipo) reproductor.setMessageInterceptor(tipo, filtrarOrdenDelSistema);
-});
 
 // ---------- Escala ----------
 function ajustarEscala() {
@@ -448,13 +487,13 @@ function ajustarEscala() {
 window.addEventListener('resize', ajustarEscala);
 ajustarEscala();
 
-// ---------- Arranque ----------
-const opciones = new cast.framework.CastReceiverOptions();
-opciones.supportedCommands =
-  Mensajes.Command.ALL_BASIC_MEDIA | Mensajes.Command.QUEUE_NEXT | Mensajes.Command.QUEUE_PREV;
-contexto.start(opciones);
-pintarFoco();
-mostrarVolumen();
+// ---------- Estado inicial de la interfaz ----------
+try {
+  pintarFoco();
+  mostrarVolumen();
+} catch (e) {
+  mostrarError(e);
+}
 </script>
 </body>
 </html>
