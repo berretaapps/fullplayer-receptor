@@ -158,7 +158,7 @@
   <div id="espera">
     <img src="icono.png" alt="">
     <h1>Full Player</h1>
-    <p>Esperando música desde el teléfono…</p>
+    <p data-texto="espera">Esperando música desde el teléfono…</p>
   </div>
 
   <div id="reproductor">
@@ -172,7 +172,7 @@
       <div id="progreso">
         <div id="barra"><div id="relleno"></div><div id="punto"></div></div>
         <div id="tiempos"><span id="actual">0:00</span><span id="total">0:00</span></div>
-        <div id="ayuda-barra">◀ ▶ para retroceder o adelantar 10 segundos</div>
+        <div id="ayuda-barra" data-texto="ayudaBarra">◀ ▶ para retroceder o adelantar 10 segundos</div>
       </div>
 
       <div id="controles">
@@ -212,13 +212,34 @@ const $ = (id) => document.getElementById(id);
 
 reproductor.setMediaElement($('medio'));
 
+// ---------- Idioma ----------
+// La pantalla usa el idioma configurado en el televisor (inglés si no es uno de estos).
+const TEXTOS = {
+  es: { espera: 'Esperando música desde el teléfono…', ayudaBarra: '◀ ▶ para retroceder o adelantar 10 segundos',
+        de: 'de', sinTitulo: 'Sin título', conSonido: 'Con sonido', sinSonido: 'Sin sonido',
+        error: 'Error del receptor', errorDesconocido: 'Error desconocido' },
+  en: { espera: 'Waiting for music from the phone…', ayudaBarra: '◀ ▶ to rewind or skip ahead 10 seconds',
+        de: 'of', sinTitulo: 'Untitled', conSonido: 'Sound on', sinSonido: 'Muted',
+        error: 'Receiver error', errorDesconocido: 'Unknown error' },
+  fr: { espera: 'En attente de musique depuis le téléphone…', ayudaBarra: '◀ ▶ pour reculer ou avancer de 10 secondes',
+        de: 'sur', sinTitulo: 'Sans titre', conSonido: 'Son activé', sinSonido: 'Son coupé',
+        error: 'Erreur du récepteur', errorDesconocido: 'Erreur inconnue' },
+  de: { espera: 'Warte auf Musik vom Handy…', ayudaBarra: '◀ ▶ zum Zurück- oder Vorspulen um 10 Sekunden',
+        de: 'von', sinTitulo: 'Ohne Titel', conSonido: 'Ton an', sinSonido: 'Stumm',
+        error: 'Receiver-Fehler', errorDesconocido: 'Unbekannter Fehler' },
+};
+const idioma = ((navigator.language || 'en').slice(0, 2).toLowerCase());
+const T = TEXTOS[idioma] || TEXTOS.en;
+document.documentElement.lang = TEXTOS[idioma] ? idioma : 'en';
+document.querySelectorAll('[data-texto]').forEach((el) => { el.textContent = T[el.dataset.texto]; });
+
 // ---------- Errores visibles ----------
 // Si algo falla en la TV, se muestra abajo a la izquierda (sirve para diagnosticar con una foto).
 function mostrarError(err) {
   const caja = document.getElementById('error');
   if (!caja) return;
-  const texto = err && (err.message || err.reason || err) ? String(err.message || err.reason || err) : 'Error desconocido';
-  caja.textContent = 'Error del receptor: ' + texto.slice(0, 160);
+  const texto = err && (err.message || err.reason || err) ? String(err.message || err.reason || err) : T.errorDesconocido;
+  caja.textContent = T.error + ': ' + texto.slice(0, 160);
   caja.style.display = 'block';
 }
 window.addEventListener('error', (e) => mostrarError(e.error || e.message));
@@ -258,7 +279,7 @@ function mostrarCancion() {
   if (!info) return;
   document.body.classList.add('con-musica');
   const meta = info.metadata || {};
-  $('titulo').textContent = textoDe(meta, 'title') || 'Sin título';
+  $('titulo').textContent = textoDe(meta, 'title') || T.sinTitulo;
   $('artista').textContent = textoDe(meta, 'artist', 'albumArtist', 'subtitle', 'studio');
   $('album').textContent = textoDe(meta, 'albumName');
   const imagen = meta.images && meta.images.length ? meta.images[0].url : '';
@@ -272,7 +293,7 @@ function mostrarPosicion() {
   const cola = reproductor.getQueueManager();
   const items = cola ? cola.getItems() : null;
   const actual = cola ? cola.getCurrentItemIndex() : -1;
-  $('posicion').textContent = items && items.length > 1 && actual >= 0 ? `${actual + 1} de ${items.length}` : '';
+  $('posicion').textContent = items && items.length > 1 && actual >= 0 ? `${actual + 1} ${T.de} ${items.length}` : '';
 }
 
 // ---------- Tiempo y estado ----------
@@ -345,7 +366,7 @@ const acciones = {
     const v = contexto.getSystemVolume();
     if (!v) return;
     contexto.setSystemVolumeMuted(!v.muted);
-    avisar(v.muted ? 'Con sonido' : 'Sin sonido');
+    avisar(v.muted ? T.conSonido : T.sinSonido);
   },
 };
 
