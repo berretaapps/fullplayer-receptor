@@ -311,7 +311,7 @@ function pasarA(salto) {
   const pedido = new Mensajes.QueueUpdateRequestData();
   pedido.type = Mensajes.MessageType.QUEUE_UPDATE;
   pedido.jump = salto;
-  pedidoPropio = true;
+  marcarPropia('QUEUE_UPDATE');
   reproductor.sendLocalMediaRequest(pedido);
 }
 
@@ -319,6 +319,7 @@ function adelantar(segundos) {
   const total = reproductor.getDurationSec();
   let destino = reproductor.getCurrentTimeSec() + segundos;
   destino = Math.max(0, total > 0 ? Math.min(destino, total - 1) : destino);
+  marcarPropia('SEEK');
   reproductor.seek(destino);
   avisar(segundos > 0 ? `+${segundos} s` : `−${-segundos} s`);
   mostrarProgreso();
@@ -327,12 +328,17 @@ function adelantar(segundos) {
 const acciones = {
   anterior() {
     // como en el teléfono: si ya avanzó unos segundos, vuelve al principio de la canción
-    if (reproductor.getCurrentTimeSec() > 3) reproductor.seek(0);
+    if (reproductor.getCurrentTimeSec() > 3) { marcarPropia('SEEK'); reproductor.seek(0); }
     else pasarA(-1);
   },
   play() {
-    if (reproductor.getPlayerState() === Mensajes.PlayerState.PLAYING) reproductor.pause();
-    else reproductor.play();
+    if (reproductor.getPlayerState() === Mensajes.PlayerState.PLAYING) {
+      marcarPropia('PAUSE');
+      reproductor.pause();
+    } else {
+      marcarPropia('PLAY');
+      reproductor.play();
+    }
   },
   siguiente() { pasarA(1); },
   silencio() {
@@ -455,11 +461,25 @@ window.addEventListener('keyup', alSoltar, true);
 // Respaldo: si igual llega una orden de reproducción justo después de una tecla del control
 // y no la pidió esta página, la genera el sistema de la TV al moverse → se ignora.
 // Las órdenes del teléfono siguen funcionando normalmente.
-let pedidoPropio = false;
+// Dentro de Cast, las acciones de esta página (pausar, adelantar, cambiar de canción) pasan por
+// el mismo camino que las órdenes externas. Por eso cada acción propia se anota con su tipo durante
+// un momento y el filtro la deja pasar; solo se descartan las que genera el sistema al mover el foco.
+const ordenesPropias = new Map();   // tipo de orden → hasta cuándo se espera
+function marcarPropia(nombre) {
+  const tipo = Mensajes.MessageType[nombre] || nombre;
+  ordenesPropias.set(tipo, Date.now() + 1500);
+}
 function filtrarOrdenDelSistema(pedido) {
   try {
-    if (pedidoPropio) { pedidoPropio = false; return pedido; }
-    if (Date.now() - ultimaTecla < 700) return null;
+    const ahora = Date.now();
+    const tipo = pedido && pedido.type;
+    const vence = ordenesPropias.get(tipo);
+    if (vence && vence > ahora) { ordenesPropias.delete(tipo); return pedido; }
+    // si Cast no informa el tipo, se deja pasar mientras haya alguna acción propia pendiente
+    if (tipo === undefined) {
+      for (const v of ordenesPropias.values()) if (v > ahora) return pedido;
+    }
+    if (ahora - ultimaTecla < 700) return null;
   } catch (e) { /* ante cualquier duda, la orden pasa */ }
   return pedido;
 }
